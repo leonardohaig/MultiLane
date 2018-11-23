@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <algorithm>
 
 #include "LaneDetection.h"
 
@@ -229,6 +230,107 @@ void LaneDetection::lane_marking_detection(bool verbose) {
 //
 //		cv::imshow("Lane marking detectionLine", img_testShowLine);
 	}
+}
+
+
+void LaneDetection::ClusterLanePoints()
+{
+	std::vector<std::vector<LANE_MARKING>> clusters;
+	std::vector<LANE_MARKING> tmpCluster;
+
+	int mostSimilarClusterIndex;
+	float mostSimilarErr;
+	float minError = 10;
+
+	//取第一个候选点作为第一个簇
+	tmpCluster.push_back( lm[0] );
+	clusters.push_back( tmpCluster );
+	tmpCluster.clear();
+
+
+
+	for(int i=1; i<lm.size();++i)
+	{
+		GetMostSimilarClusterIndex(lm[i],clusters,mostSimilarErr,mostSimilarClusterIndex);
+
+		if( mostSimilarErr < minError )
+			clusters[mostSimilarClusterIndex].push_back(lm[i]);
+		else
+		{
+			tmpCluster.push_back( lm[i]);
+			clusters.push_back( tmpCluster );
+			tmpCluster.clear();
+		}
+
+	}
+
+	cv::Mat img_test = cv::Mat::zeros(img_size, CV_8UC3);
+	cv::RNG rng(12345);
+	for(int i=0; i<fminf(8000,clusters.size()); ++i )
+	{
+		if(clusters[i].size() < 3 )
+			continue;
+
+		for (int n = 0; n < clusters[i].size()-1; n++)
+		{
+			cv::line(img_test, clusters[i][n].str_p, clusters[i][n+1].str_p, cv::Scalar(rng.uniform(0,255),rng.uniform(0,255),rng.uniform(0,255)), 2, 8, 0);
+		}
+
+		cv::imshow("cluster points", img_test);
+		cv::waitKey(0);
+	}
+
+
+
+
+	//cv::waitKey(0);
+
+
+
+
+}
+void LaneDetection::GetMostSimilarClusterIndex(LANE_MARKING _lm,std::vector<std::vector<LANE_MARKING>>& clusters,
+		float& mostSimlarErr,int& mostSimlarIdx)
+{
+	LANE_MARKING _tmepLM;
+	std::vector<std::vector<float>> similarArray(clusters.size());
+
+	for(int i=0; i<clusters.size(); ++i)
+	{
+		for(int j=0; j<clusters[i].size();++j)
+		{
+			_tmepLM = clusters[i][j];
+			float dis = sqrt((_lm.cnt_p.x-_tmepLM.cnt_p.x)*(_lm.cnt_p.x-_tmepLM.cnt_p.x)+
+									 (_lm.cnt_p.y-_tmepLM.cnt_p.y)*(_lm.cnt_p.y-_tmepLM.cnt_p.y));
+
+			similarArray[i].push_back( dis );
+		}
+
+	}
+
+	//找出与每个簇的相似度，然后在这些相似度中在找出最相似的
+	std::vector<float> simlarClusterArray;
+	std::vector<int> simlarClusterIdx;
+
+	for(int i=0; i!=similarArray.size(); ++i)
+	{
+		auto smallest = std::min_element( std::begin(similarArray[i]), std::end(similarArray[i]) );
+		//std::cout << "min element is " << *smallest<< " at position " << std::distance(std::begin(similarArray), smallest) << std::endl;
+		simlarClusterArray.push_back(*smallest);
+		simlarClusterIdx.push_back( i );
+
+	}
+
+	//找出所有簇中最小的
+	for(int i=0; i!=simlarClusterArray.size();++i)
+	{
+		auto smallest = std::min_element( std::begin(simlarClusterArray), std::end(simlarClusterArray) );
+		mostSimlarErr = *smallest;
+		mostSimlarIdx = i;
+	}
+
+
+
 }
 
 void LaneDetection::seed_generation(bool verbose) {

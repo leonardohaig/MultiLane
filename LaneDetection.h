@@ -49,6 +49,10 @@ public:
 	bool initialize_variable(std::string& img_name);
 	bool initialize_Img(std::string& img_name);
 	void lane_marking_detection(bool verbose = false);
+
+	void ClusterLanePoints();
+	void GetMostSimilarClusterIndex(LANE_MARKING _lm,std::vector<std::vector<LANE_MARKING>>& clusters,float& mostSimlarErr,int& mostSimlarIdx);
+
 	float marking_thres(float input);
 	int dist_ftn1(int i, int sj, double slope);
 	

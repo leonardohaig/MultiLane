@@ -45,6 +45,8 @@ int main()
 		// detecting lane markings
 		ld.lane_marking_detection(verbose_lm_detction);
 
+		//ld.ClusterLanePoints();
+
 		// supermarking generation and low-level association
 		ld.seed_generation(verbose_seed_gen);
 
