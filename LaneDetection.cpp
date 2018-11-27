@@ -97,10 +97,12 @@ bool LaneDetection::initialize_Img(std::string& img_name) {
 	return true;
 }
 
-void LaneDetection::lane_marking_detection(bool verbose) {
+void LaneDetection::lane_marking_detection(bool verbose,cv::Mat* resWithMark)
+{
 
 
-	for (int h = img_roi_height; h < img_height;) {
+	for (int h = img_roi_height; h < img_height;)
+	{
 
 		// half size of the filter
 		int hf_size = 2 + 8 * (h - img_roi_height + 1) / (img_height - img_roi_height);
@@ -108,7 +110,8 @@ void LaneDetection::lane_marking_detection(bool verbose) {
 		std::vector<int> scan_line(img_width);
 
 		// Edge Extraction
-		for (int w = hf_size + 1; w < img_width - hf_size - 1; w++) {
+		for (int w = hf_size + 1; w < img_width - hf_size - 1; w++)
+		{
 
 			// left edge value, right edge value
 			int l_val = 0;
@@ -126,17 +129,22 @@ void LaneDetection::lane_marking_detection(bool verbose) {
 
 		// Edge Centering
 		int e_flag = 0; // edge flag
-		for (int w = hf_size + 1; w < img_width - hf_size - 2; w++) {
-			if (scan_line[w] == 1) {
-				if (e_flag >= 0) {
+		for (int w = hf_size + 1; w < img_width - hf_size - 2; w++)
+		{
+			if (scan_line[w] == 1)
+			{
+				if (e_flag >= 0)
+				{
 					e_flag++;
 				}
-				else {
+				else
+				    {
 					scan_line[w - (int)(e_flag / 2.0)] = -10;
 					e_flag = 0;
 				}
 			}
-			else if (scan_line[w] == -1) {
+			else if (scan_line[w] == -1)
+			{
 				if (e_flag <= 0) {
 					e_flag--;
 				}
@@ -145,7 +153,8 @@ void LaneDetection::lane_marking_detection(bool verbose) {
 					e_flag = 0;
 				}
 			}
-			else {
+			else
+			    {
 				if (e_flag > 0) {
 					scan_line[w - (int)(e_flag / 2.0)] = 10;
 					e_flag = 0;
@@ -161,7 +170,8 @@ void LaneDetection::lane_marking_detection(bool verbose) {
 		cv::Point2i l_pt, r_pt;
 		int m_flag = 0;
 
-		for (int w = hf_size + 1; w < img_width - hf_size - 1; w++) {
+		for (int w = hf_size + 1; w < img_width - hf_size - 1; w++)
+		{
 			if (scan_line[w] == 10) {
 				m_flag = 1;
 				l_pt.x = w;
@@ -215,12 +225,17 @@ void LaneDetection::lane_marking_detection(bool verbose) {
 
 	if (verbose)
 	{
+        resWithMark->create(img_size,CV_8UC1);
+        resWithMark->setTo(0);
+
+
 		cv::Mat img_test = cv::Mat::zeros(img_size, CV_8UC3);
 		for (int n = 0; n < lm.size(); n++)
 		{
 			cv::line(img_test, lm[n].str_p, lm[n].end_p, CV_RGB(0, 255, 0), 2, 8, 0);
+            cv::line(*resWithMark, lm[n].str_p, lm[n].end_p, cv::Scalar(255,255,255), 2, 8, 0);
 		}
-		cv::imshow("Lane marking detection", img_test);
+		//cv::imshow("Lane marking detection", img_test);
 
 //		cv::Mat img_testShowLine = m_resImg.clone();
 //		for (int n = 0; n < lm.size(); n++)

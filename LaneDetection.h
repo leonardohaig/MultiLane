@@ -48,7 +48,7 @@ public:
 	cv::Mat m_resImg;
 	bool initialize_variable(std::string& img_name);
 	bool initialize_Img(std::string& img_name);
-	void lane_marking_detection(bool verbose = false);
+	void lane_marking_detection(bool verbose = false,cv::Mat* resWithMark=nullptr);
 
 	void ClusterLanePoints();
 	void GetMostSimilarClusterIndex(LANE_MARKING _lm,std::vector<std::vector<LANE_MARKING>>& clusters,float& mostSimlarErr,int& mostSimlarIdx);
