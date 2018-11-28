@@ -767,8 +767,63 @@ float LaneDetectionLSD::calLineConfidence(const cv::Vec4f& line)
 
 void LaneDetectionLSD::mergeLinesIntoLines(std::vector<cv::Vec4f>& lines)
 {
+    //generate lines points
+    std::vector<LineSegment> lineSegmentArray;
+    lineSegmentArray.resize( lines.size() );
+    for(int i=0; i!=lines.size();++i)
+    {
+        cv::Vec4f& line =  lines[i];
+        cv::Point2f startP,endP;
+        startP.x = line[0];
+        startP.y = line[1];
+        endP.x = line[2];
+        endP.y = line[3];
+
+        lineSegmentArray[i].line = lines[i];
+        float k = (endP.y-startP.y)*1.0 / (endP.x-startP.x);//divde
+        float b = endP.y - k*endP.x;
+        float degree = atan(k)*180.0 / CV_PI;
+
+        lineSegmentArray[i].k = k;
+        lineSegmentArray[i].b = b;
+        lineSegmentArray[i].degree = degree;
+
+        int nPointNum = abs(endP.y-startP.y)+1;
+        lineSegmentArray[i].linePoints.reserve( nPointNum );
+        for(int curY=cvRound(startP.y); curY<=endP.y; ++curY )
+        {
+            float curX = (curY-b)*1.0 / k;
+            lineSegmentArray[i].linePoints.push_back( cv::Point2f(curX,curY));
+
+        }
+
+
+    }
+
+
+
+    //generate the lines map
+    int lineMapInitValue = -1;
+    cv::Mat curLinesMap(m_grayImageROI.size(),CV_32SC1,cv::Scalar(lineMapInitValue));
+
+    for(int i=0; i!=lines.size();++i)
+    {
+        cv::Vec4f& line =  lines[i];
+        cv::Point startP,endP;
+        startP.x = cvRound(line[0]);
+        startP.y = cvRound(line[1]);
+        endP.x = cvRound(line[2]);
+        endP.y = cvRound(line[3]);
+        cv::line(curLinesMap,startP,endP,cv::Scalar(i));
+    }
+
+    int mapHeight = curLinesMap.rows;
+    int mapWidth = curLinesMap.cols;
+
+    //merge lines
     float angleThrehold = 5.0;//unit:degree
     int searchDis = 10;//unit:pixel
+    int windowSize = 3;//the line's left and right 3pixel to find line to merge
     for(int i=0; i!=lines.size(); ++i)
     {
         const cv::Vec4f& masterLine = lines[i];
@@ -777,57 +832,192 @@ void LaneDetectionLSD::mergeLinesIntoLines(std::vector<cv::Vec4f>& lines)
         masterStartP.y = masterLine[1];
         masterEndP.x = masterLine[2];
         masterEndP.y = masterLine[3];
-        float masterLineDegree = atan( (masterEndP.y-masterStartP.y) / (masterEndP.x-masterStartP.x) );
+        float masterLineDegree = lineSegmentArray[i].degree;
+        float k = lineSegmentArray[i].k;
+        float b = lineSegmentArray[i].b;
 
-
-        for(int j=0; j!=lines.size(); ++j)
+        for(int curY=cvRound(masterStartP.y-searchDis*1.0/sin(atan(k))); curY<masterStartP.y;++curY)
         {
-            if(i==j)continue;
+            if( curY<0 || curY>=mapHeight ) continue;
 
-            const cv::Vec4f& slaveLine = lines[j];
-            cv::Point2f slaveStartP,slaveEndP;
-            slaveStartP.x = slaveLine[0];
-            slaveStartP.y = slaveLine[1];
-            slaveEndP.x = slaveLine[2];
-            slaveEndP.y = slaveLine[3];
-            float k = (slaveEndP.y-slaveStartP.y) / (slaveEndP.x-slaveStartP.x);
-            float b = slaveEndP.y - k*slaveEndP.x;
-            float slaveLineDegree = atan( k);
-
-            if( abs(masterLineDegree-slaveLineDegree) < angleThrehold*2 )
+            float x = (curY-b) / k;
+            for(int curX=cvRound(x-windowSize);curX<x+windowSize;++x)
             {
-                //then judge whether the distance is right
-                //here I judge the nearst point,so first step is judeg which line is up,which line is down
-                if( masterStartP.y > slaveEndP.y )//master is in up
+                if(curX<0 || curX>=mapWidth ) continue;
+
+                //if find line in line map,then merge it,and upgrate the lineMap,lineSegmentArray ,etc
+                int slaveIdx = curLinesMap.at<int>(curY,curX);
+                if( slaveIdx != lineMapInitValue )//merge the two line to master line
                 {
 
-                }
+                    //judeg the two lines's degree is right or not
+                    const cv::Vec4f& slaveLine = lines[slaveIdx];
+                    cv::Point2f slaveStartP,slaveEndP;
+                    slaveStartP.x = slaveLine[0];
+                    slaveStartP.y = slaveLine[1];
+                    slaveEndP.x = slaveLine[2];
+                    slaveEndP.y = slaveLine[3];
+                    float k = (slaveEndP.y-slaveStartP.y) / (slaveEndP.x-slaveStartP.x);
+                    float b = slaveEndP.y - k*slaveEndP.x;
+                    float slaveLineDegree = atan( k)*180.0 / CV_PI;
 
-                for(int curY=masterStartP.y-searchDis; curY<masterEndP.y+searchDis;++curY)
-                {
-
-                    if( curY >= m_grayImageROI.rows || curY < 0 ) continue;
-
-                    float curX = (curY-b) / k;
-                    if(curX<=slaveStartP.x )
+                    if( abs(masterLineDegree-slaveLineDegree) < angleThrehold*2 )
                     {
+                        //get the two lines points,and get the new line by RANSAC
+                        LineSegment newLineSegMent;
+                        getMergedLineParam(lineSegmentArray[i],lineSegmentArray[slaveIdx],newLineSegMent);
+
+                        if( abs(newLineSegMent.degree-masterLineDegree) < angleThrehold*2 &&
+                                abs(newLineSegMent.degree-slaveLineDegree) < angleThrehold*2 )
+                        {
+
+                            //update the variables
+                            lines[i] = newLineSegMent.line;
+                            lineSegmentArray[i] = newLineSegMent;
+
+                            std::vector<cv::Vec4f>::iterator itLines = (lines.begin()+slaveIdx);
+                            lines.erase(itLines);
+
+                            std::vector<LineSegment>::iterator itLineSegment = (lineSegmentArray.begin() + slaveIdx);
+                            lineSegmentArray.erase( itLineSegment );
+
+                            //this is error!!!!
+                            curLinesMap.setTo(i,curLinesMap==slaveIdx);//linemap need to update
+
+                            --i;
+
+                            break;
+                        }
+
+
+
 
                     }
 
 
+
+
+
+
                 }
 
-                //merge the two line to master line
-                cv::Point2f newLineStartP,newLineEndP;
-                if( masterStartP.y < slaveStartP.y )
-                    ;
-                lines[i][0] = 0;
+
+
             }
 
 
+        }
+
+        //merge the two line to master line
+        cv::Point2f newLineStartP,newLineEndP;
+        if( masterStartP.y < slaveStartP.y )
+            ;
+        lines[i][0] = 0;
+
+
+
+
+
+
+
+
+
+
+
+    }
+}
+bool LaneDetectionLSD::fitLineRansac(const std::vector<cv::Point2f>& vecLinePoint, cv::Vec4f& vec4fLine)
+{
+    int iterations = 100;//迭代次数
+    double sigma = 1.;
+    double a_max = 7.;
+
+    int n = vecLinePoint.size();
+    //cout <<"point size : "<< n << endl;
+    if (n<2)
+    {
+        printf("Points must be more than 2 EA\n");
+        return false;
+    }
+
+    cv::RNG rng;
+    double bestScore = -1.;
+    for (int k = 0; k<iterations; k++)
+    {
+        int i1 = 0, i2 = 0;
+        double dx = 0;
+        while (i1 == i2)
+        {
+            i1 = rng(n);
+            i2 = rng(n);
+        }
+        cv::Point2f p1 = vecLinePoint[i1];
+        cv::Point2f p2 = vecLinePoint[i2];
+
+        cv::Point2f dp = p2 - p1;
+        dp *= 1. / norm(dp);
+        double score = 0;
+
+        if (fabs(dp.x / 1.e-5f) && fabs(dp.y / dp.x) <= a_max)
+        {
+            for (int i = 0; i<n; i++)
+            {
+                cv::Point2f v = vecLinePoint[i] - p1;
+                double d = v.y*dp.x - v.x*dp.y;
+                score += exp(-0.5*d*d / (sigma*sigma));
+            }
+        }
+        if (score > bestScore)
+        {
+            vec4fLine = cv::Vec4f(dp.x, dp.y, p1.x, p1.y);
+            bestScore = score;
+        }
+    }
+    return true;
+}
+
+bool LaneDetectionLSD::getMergedLineParam(const LineSegment& line1,const LineSegment& line2,LineSegment& newLine)
+{
+    int n = line1.linePoints.size();
+    int m = line2.linePoints.size();
+
+    std::vector<cv::Point2f> vecLinePoint;
+    vecLinePoint.reserve( n+m );
+    vecLinePoint.assign(line1.linePoints.begin(),line1.linePoints.end());
+    vecLinePoint.insert(vecLinePoint.end(),line2.linePoints.begin(),line2.linePoints.end());
+
+    cv::Vec4f vec4fLine;
+    bool bCheck = fitLineRansac(vecLinePoint,vec4fLine);
+    if( bCheck )
+    {
+        cv::Point2f startP,endP;
+        startP.x = vec4fLine[0];
+        startP.y = vec4fLine[1];
+        endP.x = vec4fLine[2];
+        endP.y = vec4fLine[3];
+
+        newLine.line = vec4fLine;
+        float k = (endP.y-startP.y)*1.0 / (endP.x-startP.x);//divde
+        float b = endP.y - k*endP.x;
+        float degree = atan(k)*180.0 / CV_PI;
+
+        newLine.k = k;
+        newLine.b = b;
+        newLine.degree = degree;
+
+        int nPointNum = abs(endP.y-startP.y)+1;
+        newLine.linePoints.reserve( nPointNum );
+        for(int curY=cvRound(startP.y); curY<=endP.y; ++curY )
+        {
+            float curX = (curY-b)*1.0 / k;
+            newLine.linePoints.push_back( cv::Point2f(curX,curY));
 
         }
     }
+
+    return bCheck;
+
+
 }
 
 

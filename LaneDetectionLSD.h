@@ -53,6 +53,8 @@ public:
     int judegLinePNFlag(const cv::Vec4f& line);
     float calLineConfidence(const cv::Vec4f& line);
     void mergeLinesIntoLines(std::vector<cv::Vec4f>& lines);//merge into line,not curve
+    bool fitLineRansac(const std::vector<cv::Point2f>& vecLinePoint, cv::Vec4f& vec4fLine);
+    bool getMergedLineParam(const LineSegment& line1,const LineSegment& line2,LineSegment& newLine);
     float marking_thres(float input);
 
 };
