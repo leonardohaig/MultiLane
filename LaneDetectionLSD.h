@@ -6,6 +6,7 @@
 #define MULTILANE_LANEDETECTIONLSD_H
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include "typedef.h"
 
 
 class LaneDetectionLSD
